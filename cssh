@@ -3,11 +3,12 @@
 #
 # cssh(1) completion by Aaron Spettl <aaron@spettl.de>, adapted from the
 # Debian GNU/Linux dput(1) completion by Roland Mas <lolando@debian.org>
+# Modified by James Mackie <jc.mackie@gmail.com> to enable node name matching.
 
 have cssh &&
 _cssh()
 {
-	local cur prev options paroptions clusters extra_cluster_file_line clusters_line extra_cluster_file
+	local cur prev options paroptions clusters extra_cluster_file_line clusters_line extra_cluster_file clusters_containing_cword
 
 	COMPREPLY=()
 	cur=${COMP_WORDS[COMP_CWORD]}
@@ -24,14 +25,17 @@ _cssh()
 	extra_cluster_file_line="`grep '^[[:space:]]*extra_cluster_file' $HOME/.csshrc 2> /dev/null`"
 	[ -z "$extra_cluster_file_line" ] && extra_cluster_file_line="`grep '^[[:space:]]*extra_cluster_file' /etc/csshrc 2> /dev/null`"
 
-	# find the clusters line in the .csshrc or, alternatively, /etc/csshrc
-	clusters_line="`grep '^[[:space:]]*clusters' $HOME/.csshrc 2> /dev/null`"
-	[ -z "$clusters_line" ] && clusters_line="`grep '^[[:space:]]*clusters' /etc/csshrc 2> /dev/null`"
-
 	# extract the location of the extra cluster file
 	extra_cluster_file="`echo $extra_cluster_file_line | cut -f 2- -d '='`"
 	[ -n "$extra_cluster_file" ] && extra_cluster_file="`eval echo $extra_cluster_file`"
 	                                                   # TODO: don't use eval to expand ~ and $HOME
+	# find the clusters line in the .csshrc or, alternatively, /etc/csshrc
+	clusters_line="`grep '^[[:space:]]*clusters' $HOME/.csshrc 2> /dev/null`"
+	[ -z "$clusters_line" ] && clusters_line="`grep '^[[:space:]]*clusters' /etc/csshrc 2> /dev/null`"
+
+	# TODO: find the clusters in .csshrc or, alternatively, /etc/csshrc that contain $cur as a node
+	# I haven't found a neat way of doing this yet. Because of the structure of the config file, it involves a lot of for loops and greps.
+	
 
 	# get the names of all defined clusters
 	clusters=$(
@@ -39,6 +43,14 @@ _cssh()
 		[ -n "$clusters_line" ] && echo "$clusters_line" | cut -f 2- -d '=' | tr "$IFS" "\n" || /bin/true
 		[ -n "$extra_cluster_file" ] && sed -e 's/^\([a-z0-9.-]\+\).*$/\1/i' "$extra_cluster_file" 2> /dev/null || /bin/true
 		sed -e 's/^\([a-z0-9.-]\+\).*$/\1/i' /etc/clusters 2> /dev/null || /bin/true
+	} | sort -u)
+
+	# get the names of any clusters that contain $cur
+	# this is so that you can use node names to retreive any clusters they might be in
+	clusters_containing_cword=$(
+	{
+		[ -n "$extra_cluster_file" ] && grep "$cur" "$extra_cluster_file" | sed -e 's/^\([a-z0-9.-]\+\).*$/\1/i' 2> /dev/null || /bin/true
+		grep "$cur" /etc/clusters | sed -e 's/^\([a-z0-9.-]\+\).*$/\1/i' 2> /dev/null || /bin/true
 	} | sort -u)
 
 	# use options and clusters for tab completion, except there isn't yet
@@ -55,13 +67,13 @@ _cssh()
 		COMPREPLY=()
 
 		# also use ssh hosts for tab completion if function _known_hosts is present
-		[ "`type -t _known_hosts`" = "function" ] && _known_hosts -a
+		# this function returns a lot of noise for me, so I've commented it out
+		#[ "`type -t _known_hosts`" = "function" ] && _known_hosts_real -a
 
-		COMPREPLY=( "${COMPREPLY[@]}" $( compgen -W "$paroptions" | grep "^$cur") )
+		COMPREPLY=( "${COMPREPLY[@]}" $( compgen -W "$paroptions" | grep "^$cur") ${clusters_containing_cword} )
 		;;
 	esac
 
 	return 0
 }
 [ "$have" ] && complete -F _cssh cssh crsh ctel
-
